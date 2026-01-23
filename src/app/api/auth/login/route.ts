@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
-console.log("🚀 ~ API_URL:", API_URL)
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,8 +16,6 @@ export async function POST(request: NextRequest) {
     });
 
     let data = await response.json();
-    console.log("🚀 ~ POST ~ data.success:", data.success)
-    console.log("🚀 ~ POST ~ data.data:", data.data)
     if(data.success) data = data.data
     console.log('Login API - Backend response status:', response.status);
     console.log('Login API - Has accessToken:', !!data.accessToken);

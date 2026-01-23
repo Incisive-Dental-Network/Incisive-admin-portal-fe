@@ -111,7 +111,7 @@ export default function RegisterPage() {
       <div className="text-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Create an account</h1>
         <p className="text-sm text-gray-600 mt-1">
-          Sign up to get started with User Management
+          Sign up to get started with Data Management
         </p>
       </div>
 

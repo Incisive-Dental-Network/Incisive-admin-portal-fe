@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from '@/components/ui/Toast';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import type {
   TableConfig,
   TableRowsResponse,
@@ -98,7 +99,7 @@ export function useTable(tableName: string, options: UseTableOptions = {}): UseT
   const fetchConfig = useCallback(async () => {
     setIsLoadingConfig(true);
     try {
-      const response = await fetch(`/api/tables/${tableName}`);
+      const response = await fetchWithAuth(`/api/tables/${tableName}`);
       if (!response.ok) throw new Error('Failed to fetch table config');
 
       const data: TableConfig = await response.json();
@@ -139,7 +140,7 @@ export function useTable(tableName: string, options: UseTableOptions = {}): UseT
         }
       });
 
-      const response = await fetch(`/api/tables/${tableName}/rows?${params}`);
+      const response = await fetchWithAuth(`/api/tables/${tableName}/rows?${params}`);
       if (!response.ok) throw new Error('Failed to fetch rows');
 
       const data: TableRowsResponse = await response.json();
@@ -164,7 +165,7 @@ export function useTable(tableName: string, options: UseTableOptions = {}): UseT
   const getRow = useCallback(
     async (id: string): Promise<Record<string, unknown> | null> => {
       try {
-        const response = await fetch(`/api/tables/${tableName}/rows/${id}`);
+        const response = await fetchWithAuth(`/api/tables/${tableName}/rows/${id}`);
         if (!response.ok) throw new Error('Failed to fetch row');
         return response.json();
       } catch (error) {
@@ -180,7 +181,7 @@ export function useTable(tableName: string, options: UseTableOptions = {}): UseT
     async (data: Record<string, unknown>): Promise<boolean> => {
       setIsCreating(true);
       try {
-        const response = await fetch(`/api/tables/${tableName}/rows`, {
+        const response = await fetchWithAuth(`/api/tables/${tableName}/rows`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
@@ -208,7 +209,7 @@ export function useTable(tableName: string, options: UseTableOptions = {}): UseT
     async (id: string, data: Record<string, unknown>): Promise<boolean> => {
       setIsUpdating(true);
       try {
-        const response = await fetch(`/api/tables/${tableName}/rows/${id}`, {
+        const response = await fetchWithAuth(`/api/tables/${tableName}/rows/${id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
@@ -236,7 +237,7 @@ export function useTable(tableName: string, options: UseTableOptions = {}): UseT
     async (id: string): Promise<boolean> => {
       setIsDeleting(true);
       try {
-        const response = await fetch(`/api/tables/${tableName}/rows/${id}`, {
+        const response = await fetchWithAuth(`/api/tables/${tableName}/rows/${id}`, {
           method: 'DELETE',
         });
 
@@ -258,7 +259,7 @@ export function useTable(tableName: string, options: UseTableOptions = {}): UseT
   const activateRow = useCallback(
     async (id: string): Promise<boolean> => {
       try {
-        const response = await fetch(
+        const response = await fetchWithAuth(
           `/api/tables/${tableName}/rows/${id}/activate`,
           { method: 'POST' }
         );
@@ -279,7 +280,7 @@ export function useTable(tableName: string, options: UseTableOptions = {}): UseT
   const deactivateRow = useCallback(
     async (id: string): Promise<boolean> => {
       try {
-        const response = await fetch(
+        const response = await fetchWithAuth(
           `/api/tables/${tableName}/rows/${id}/deactivate`,
           { method: 'POST' }
         );

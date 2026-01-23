@@ -6,8 +6,8 @@ import '@/styles/globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'User Management System',
-  description: 'A comprehensive user management system with dynamic table management',
+  title: 'Data Management System',
+  description: 'A comprehensive data management system with dynamic table management',
 };
 
 export default function RootLayout({

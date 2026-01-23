@@ -20,6 +20,7 @@ import { TableFilters } from './TableFilters';
 import { TableActions } from './TableActions';
 import { formatDate, formatDateTime } from '@/lib/utils';
 import { canCreate } from '@/lib/permissions';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import { DEFAULT_PAGE_SIZE } from '@/config/ui.constants';
 import type {
   TableConfig,
@@ -115,8 +116,11 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
         params.append('filters', JSON.stringify(activeFilters));
       }
 
-      const response = await fetch(`/api/tables/${tableName}/rows?${params}`);
-      if (!response.ok) throw new Error('Failed to fetch rows');
+      const response = await fetchWithAuth(`/api/tables/${tableName}/rows?${params}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to fetch rows');
+      }
 
       let result = await response.json();
 
@@ -191,7 +195,7 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
   const handleDelete = async (id: string) => {
     setDeletingId(id);
     try {
-      const response = await fetch(`/api/tables/${tableName}/rows/${id}`, {
+      const response = await fetchWithAuth(`/api/tables/${tableName}/rows/${id}`, {
         method: 'DELETE',
       });
 
@@ -210,7 +214,7 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
   const handleActivate = async (id: string) => {
     setActivatingId(id);
     try {
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `/api/tables/${tableName}/rows/${id}`,
         {
           method: 'PATCH',
@@ -234,7 +238,7 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
   const handleDeactivate = async (id: string) => {
     setActivatingId(id);
     try {
-      const response = await fetch(
+      const response = await fetchWithAuth(
         `/api/tables/${tableName}/rows/${id}`,
         {
           method: 'PATCH',

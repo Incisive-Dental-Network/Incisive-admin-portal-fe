@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Badge, StatusBadge, RoleBadge } from '@/components/ui/Badge';
 import { toast } from '@/components/ui/Toast';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import { User as UserIcon } from 'lucide-react';
 import type { User } from '@/types';
 
@@ -55,7 +56,7 @@ export default function ProfilePage() {
 
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/users/${user.id}`, {
+      const response = await fetchWithAuth(`/api/users/${user.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),

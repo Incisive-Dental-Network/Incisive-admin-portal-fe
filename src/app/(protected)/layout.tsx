@@ -2,10 +2,17 @@ import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { ReactNode } from 'react';
 import { ProtectedLayoutClient } from './ProtectedLayoutClient';
+import { ServerError } from '@/components/ui/ServerError';
+import type { User } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
 
-async function getSession() {
+type SessionResult =
+  | { type: 'success'; user: User; accessToken: string }
+  | { type: 'no_session' }
+  | { type: 'server_error'; message: string };
+
+async function getSession(): Promise<SessionResult> {
   const cookieStore = await cookies();
   const accessToken = cookieStore.get('access_token')?.value;
   const refreshToken = cookieStore.get('refresh_token')?.value;
@@ -17,7 +24,7 @@ async function getSession() {
 
   if (!accessToken && !refreshToken) {
     console.log('Protected Layout - No tokens found');
-    return null;
+    return { type: 'no_session' };
   }
 
   try {
@@ -48,7 +55,7 @@ async function getSession() {
 
     if (!token) {
       console.log('Protected Layout - No valid token');
-      return null;
+      return { type: 'no_session' };
     }
 
     console.log('Protected Layout - Fetching user data');
@@ -61,7 +68,7 @@ async function getSession() {
 
     if (!response.ok) {
       console.log('Protected Layout - User fetch failed:', response.status);
-      return null;
+      return { type: 'no_session' };
     }
 
     let user = await response.json();
@@ -70,10 +77,23 @@ async function getSession() {
       user = user.data;
     }
     console.log('Protected Layout - User loaded:', user.email);
-    return { user, accessToken: token };
+    return { type: 'success', user: user as User, accessToken: token };
   } catch (error) {
     console.error('Protected Layout - Session error:', error);
-    return null;
+
+    // Check if it's a connection error
+    const isConnectionError =
+      error instanceof Error &&
+      (error.cause as { code?: string })?.code === 'ECONNREFUSED';
+
+    if (isConnectionError) {
+      return {
+        type: 'server_error',
+        message: 'Unable to connect to the server. Please ensure the backend service is running.',
+      };
+    }
+
+    return { type: 'no_session' };
   }
 }
 
@@ -84,7 +104,11 @@ interface ProtectedLayoutProps {
 export default async function ProtectedLayout({ children }: ProtectedLayoutProps) {
   const session = await getSession();
 
-  if (!session) {
+  if (session.type === 'server_error') {
+    return <ServerError message={session.message} />;
+  }
+
+  if (session.type === 'no_session') {
     console.log('Protected Layout - Redirecting to login');
     redirect('/login');
   }

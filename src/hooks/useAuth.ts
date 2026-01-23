@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { toast } from '@/components/ui/Toast';
 import { ROUTES } from '@/config/ui.constants';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import type { LoginRequest, RegisterRequest, User } from '@/types';
 
 export function useAuth() {
@@ -16,7 +17,7 @@ export function useAuth() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const response = await fetch('/api/users/me');
+        const response = await fetchWithAuth('/api/users/me');
         if (response.ok) {
           const userData: User = await response.json();
           setUser(userData);
@@ -52,7 +53,7 @@ export function useAuth() {
         }
 
         // Fetch user data after successful login
-        const userResponse = await fetch('/api/users/me');
+        const userResponse = await fetchWithAuth('/api/users/me');
         if (userResponse.ok) {
           const userData: User = await userResponse.json();
           setUser(userData);
@@ -89,7 +90,7 @@ export function useAuth() {
         }
 
         // Fetch user data after successful registration
-        const userResponse = await fetch('/api/users/me');
+        const userResponse = await fetchWithAuth('/api/users/me');
         if (userResponse.ok) {
           const userData: User = await userResponse.json();
           setUser(userData);

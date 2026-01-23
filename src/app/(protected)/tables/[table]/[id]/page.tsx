@@ -11,6 +11,7 @@ import { toast } from '@/components/ui/Toast';
 import { ROUTES } from '@/config/ui.constants';
 import { canEdit } from '@/lib/permissions';
 import { formatDateTime } from '@/lib/utils';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import { ChevronLeft, Pencil } from 'lucide-react';
 import type { TableConfig, TableColumn } from '@/types';
 
@@ -32,8 +33,8 @@ export default function RowDetailPage() {
       setIsLoading(true);
       try {
         const [configResponse, rowResponse] = await Promise.all([
-          fetch(`/api/tables/${tableName}`),
-          fetch(`/api/tables/${tableName}/rows/${id}`),
+          fetchWithAuth(`/api/tables/${tableName}`),
+          fetchWithAuth(`/api/tables/${tableName}/rows/${id}`),
         ]);
 
         if (configResponse.ok) {
@@ -67,7 +68,7 @@ export default function RowDetailPage() {
   const handleUpdate = async (data: Record<string, unknown>) => {
     setIsUpdating(true);
     try {
-      const response = await fetch(`/api/tables/${tableName}/rows/${id}`, {
+      const response = await fetchWithAuth(`/api/tables/${tableName}/rows/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -218,6 +219,7 @@ export default function RowDetailPage() {
         {isEditMode ? (
           <div className="p-6">
             <DynamicForm
+              tableName={tableName}
               columns={config.columns}
               initialData={row}
               onSubmit={handleUpdate}

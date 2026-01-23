@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/authStore';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
 import { ROUTES } from '@/config/ui.constants';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import {
   Users,
   Activity,
@@ -34,7 +35,7 @@ export default function DashboardPage() {
       }
 
       try {
-        const response = await fetch('/api/admin/dashboard');
+        const response = await fetchWithAuth('/api/admin/dashboard');
         if (response.ok) {
           const data = await response.json();
           setStats(data);

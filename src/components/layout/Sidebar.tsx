@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ROUTES } from '@/config/ui.constants';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import { useAuthStore } from '@/store/authStore';
 import {
   LayoutDashboard,
@@ -68,7 +69,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   useEffect(() => {
     const fetchTables = async () => {
       try {
-        const response = await fetch('/api/tables');
+        const response = await fetchWithAuth('/api/tables');
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.data?.tables) {

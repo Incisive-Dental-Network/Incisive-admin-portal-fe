@@ -12,10 +12,10 @@ export default function AuthLayout({ children }: AuthLayoutProps) {
         <div className="flex justify-center mb-8">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">UM</span>
+              <span className="text-white font-bold text-lg">DM</span>
             </div>
             <span className="text-2xl font-bold text-gray-900">
-              User Management
+              Data Management
             </span>
           </div>
         </div>

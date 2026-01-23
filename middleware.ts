@@ -21,7 +21,6 @@ export function middleware(request: NextRequest) {
   // Redirect unauthenticated users to login
   if (!hasAuth && !isPublicPath && pathname !== '/') {
     const loginUrl = new URL('/login', request.url);
-    console.log("🚀 ~ middleware ~ loginUrl:", loginUrl)
     loginUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(loginUrl);
   }

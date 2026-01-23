@@ -4,16 +4,19 @@ import { useState, useEffect, FormEvent, useMemo } from 'react';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import type { TableColumn, ColumnOption } from '@/types';
 
 // Map of foreign key columns to their API endpoints and response config (defined outside component)
-const FOREIGN_KEY_CONFIG: Record<string, { endpoint: string; dataKey: string; valueKey: string; labelKey: string }> = {
-  lab_id: { endpoint: '/api/labs/ids', dataKey: 'labs', valueKey: 'lab_id', labelKey: 'lab_id' },
-  practice_id: { endpoint: '/api/practices/ids', dataKey: 'practices', valueKey: 'practice_id', labelKey: 'practice_id' },
-  incisive_product_id: { endpoint: '/api/products/ids', dataKey: 'products', valueKey: 'incisive_id', labelKey: 'incisive_name' },
+const FOREIGN_KEY_CONFIG: Record<string, { endpoint: string; dataKey: string; valueKey: string; labelKey: string; labelFormat?: (item: Record<string, unknown>) => string; forTable: string }> = {
+  lab_id: { endpoint: '/api/labs/ids', dataKey: 'labs', valueKey: 'lab_id', labelKey: 'lab_name', labelFormat: (item) => `${item.lab_id} : ${item.lab_name}`, forTable: 'labs' },
+  practice_id: { endpoint: '/api/practices/ids', dataKey: 'practices', valueKey: 'practice_id', labelKey: 'dental_group_name', labelFormat: (item) => `${item.practice_id} : ${item.dental_group_name}`, forTable: 'dental_practices' },
+  incisive_product_id: { endpoint: '/api/products/ids', dataKey: 'products', valueKey: 'incisive_id', labelKey: 'incisive_name', forTable: 'products' },
+  dental_group_id: { endpoint: '/api/dental-groups/ids', dataKey: 'dentalGroups', valueKey: 'dental_group_id', labelKey: 'name', labelFormat: (item) => `${item.dental_group_id} : ${item.name}`, forTable: 'dental_groups' },
 };
 
 interface DynamicFormProps {
+  tableName?: string;
   columns: TableColumn[];
   initialData?: Record<string, unknown>;
   onSubmit: (data: Record<string, unknown>) => void;
@@ -23,6 +26,7 @@ interface DynamicFormProps {
 }
 
 export function DynamicForm({
+  tableName,
   columns = [],
   initialData = {},
   onSubmit,
@@ -45,12 +49,28 @@ export function DynamicForm({
     }
   }, [stableInitialData]);
 
+  // Helper to check if a column is the table's own primary key (should NOT be dropdown)
+  const isOwnPrimaryKey = (columnKey: string): boolean => {
+    const fkConfig = FOREIGN_KEY_CONFIG[columnKey];
+    // If column is in FK config and we're on the source table, it's the primary key
+    // e.g., lab_id on 'labs' table is the primary key, not a foreign key
+    return fkConfig ? fkConfig.forTable === tableName : false;
+  };
+
+  // Helper to check if a column should be treated as a foreign key dropdown
+  const isForeignKeyDropdown = (columnKey: string): boolean => {
+    const fkConfig = FOREIGN_KEY_CONFIG[columnKey];
+    // Only treat as foreign key if config exists AND we're not on the source table
+    // e.g., lab_id should be dropdown everywhere except on 'labs' table
+    return fkConfig ? fkConfig.forTable !== tableName : false;
+  };
+
   // Fetch dynamic options for select fields
   useEffect(() => {
     const fetchDynamicOptions = async () => {
-      // Get columns that need dynamic options (explicit optionsEndpoint or known foreign keys)
+      // Get columns that need dynamic options (explicit optionsEndpoint or foreign keys for other tables)
       const columnsNeedingOptions = columns.filter(
-        (col) => col.optionsEndpoint || FOREIGN_KEY_CONFIG[col.key]
+        (col) => col.optionsEndpoint || isForeignKeyDropdown(col.key)
       );
 
       for (const column of columnsNeedingOptions) {
@@ -61,7 +81,7 @@ export function DynamicForm({
         setLoadingOptions((prev) => ({ ...prev, [column.key]: true }));
 
         try {
-          const response = await fetch(endpoint);
+          const response = await fetchWithAuth(endpoint);
           if (response.ok) {
             const json = await response.json();
 
@@ -86,9 +106,14 @@ export function DynamicForm({
               const valueKey = fkConfig?.valueKey || 'id';
               const labelKey = fkConfig?.labelKey || 'name';
 
+              // Use custom labelFormat if provided, otherwise use labelKey
+              const label = fkConfig?.labelFormat
+                ? fkConfig.labelFormat(item)
+                : String(item[labelKey] ?? item.label ?? item.name ?? '');
+
               return {
                 value: String(item[valueKey] ?? item.value ?? item.id ?? ''),
-                label: String(item[labelKey] ?? item.label ?? item.name ?? ''),
+                label,
               };
             });
 
@@ -105,7 +130,7 @@ export function DynamicForm({
     if (columns.length > 0) {
       fetchDynamicOptions();
     }
-  }, [columns]);
+  }, [columns, tableName]);
 
   const editableColumns = isEditMode
     ? columns.filter((col) => col.editable)
@@ -194,9 +219,24 @@ export function DynamicForm({
   const renderField = (column: TableColumn) => {
     const value = formData[column.key];
 
-    // Check if this column should render as a select (explicit select type or foreign key)
-    const isForeignKey = !!FOREIGN_KEY_CONFIG[column.key];
-    const shouldRenderAsSelect = column.type === 'select' || isForeignKey;
+    // If this is the table's own primary key (e.g., lab_id on labs table), render as number input
+    if (isOwnPrimaryKey(column.key)) {
+      return (
+        <Input
+          key={column.key}
+          type="number"
+          label={column.label}
+          value={value !== undefined ? String(value) : ''}
+          onChange={(e) => handleChange(column.key, e.target.value)}
+          error={errors[column.key]}
+          required={column.required}
+          placeholder={`Enter ${column.label}`}
+        />
+      );
+    }
+
+    // Check if this column should render as a select (explicit select type or foreign key for another table)
+    const shouldRenderAsSelect = column.type === 'select' || isForeignKeyDropdown(column.key);
 
     if (shouldRenderAsSelect) {
       const options = getSelectOptions(column);

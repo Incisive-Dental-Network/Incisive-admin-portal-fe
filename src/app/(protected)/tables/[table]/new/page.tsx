@@ -8,6 +8,7 @@ import { SkeletonForm } from '@/components/ui/Skeleton';
 import { toast } from '@/components/ui/Toast';
 import { ROUTES } from '@/config/ui.constants';
 import { canCreate } from '@/lib/permissions';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import { ChevronLeft } from 'lucide-react';
 import type { TableConfig } from '@/types';
 
@@ -24,7 +25,7 @@ export default function NewRowPage() {
     const fetchConfig = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(`/api/tables/${tableName}`);
+        const response = await fetchWithAuth(`/api/tables/${tableName}`);
         if (response.ok) {
           let data = await response.json();
           // Handle wrapped response
@@ -53,7 +54,7 @@ export default function NewRowPage() {
   const handleCreate = async (data: Record<string, unknown>) => {
     setIsCreating(true);
     try {
-      const response = await fetch(`/api/tables/${tableName}/rows`, {
+      const response = await fetchWithAuth(`/api/tables/${tableName}/rows`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -153,6 +154,7 @@ export default function NewRowPage() {
       {/* Form */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
         <DynamicForm
+          tableName={tableName}
           columns={config.columns}
           onSubmit={handleCreate}
           onCancel={handleCancel}

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { SearchInput } from '@/components/ui/SearchInput';
 import { ROUTES } from '@/config/ui.constants';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import {
   Table,
   Users,
@@ -35,7 +36,7 @@ export default function TablesListPage() {
   useEffect(() => {
     const fetchTables = async () => {
       try {
-        const response = await fetch('/api/tables');
+        const response = await fetchWithAuth('/api/tables');
         if (response.ok) {
           let data = await response.json();
           // Handle wrapped response

@@ -10,6 +10,7 @@ import {
   hasAction,
   getTablePermissions,
 } from '@/lib/permissions';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import type { TablePermissions, TableConfig } from '@/types';
 
 interface UsePermissionsReturn {
@@ -56,7 +57,7 @@ export function usePermissions(defaultTableName?: string): UsePermissionsReturn 
     async (tableName: string): Promise<TableConfig | null> => {
       setIsLoading(true);
       try {
-        const response = await fetch(`/api/tables/${tableName}`);
+        const response = await fetchWithAuth(`/api/tables/${tableName}`);
         if (!response.ok) {
           throw new Error('Failed to fetch table config');
         }

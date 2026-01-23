@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { DataTable } from '@/components/tables/DataTable';
 import { ROUTES } from '@/config/ui.constants';
+import { fetchWithAuth } from '@/lib/fetch-client';
 import { ChevronLeft } from 'lucide-react';
 import type { TableConfig } from '@/types';
 
@@ -20,7 +21,7 @@ export default function TablePage({ params }: TablePageProps) {
     const fetchConfig = async () => {
       setIsLoadingConfig(true);
       try {
-        const response = await fetch(`/api/tables/${tableName}`);
+        const response = await fetchWithAuth(`/api/tables/${tableName}`);
         if (response.ok) {
           let data = await response.json();
           // Handle wrapped response: { success: true, data: {...} }
