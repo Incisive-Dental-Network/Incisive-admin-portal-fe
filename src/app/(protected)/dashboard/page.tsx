@@ -26,10 +26,16 @@ export default function DashboardPage() {
   const { user, isAdmin } = useAuthStore();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  // Prevent hydration mismatch by only rendering auth-dependent content after mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const fetchStats = async () => {
-      if (!isAdmin()) {
+      if (!mounted || !isAdmin()) {
         setIsLoading(false);
         return;
       }
@@ -48,7 +54,7 @@ export default function DashboardPage() {
     };
 
     fetchStats();
-  }, [isAdmin]);
+  }, [isAdmin, mounted]);
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -70,7 +76,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Admin Stats */}
-      {isAdmin() && (
+      {mounted && isAdmin() && (
         <div>
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Overview</h2>
           {isLoading ? (

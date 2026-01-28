@@ -104,15 +104,17 @@ export function TableHeaderCell({
 interface TableCellProps {
   children?: ReactNode;
   className?: string;
+  onClick?: () => void;
 }
 
-export function TableCell({ children, className }: TableCellProps) {
+export function TableCell({ children, className, onClick }: TableCellProps) {
   return (
     <td
       className={cn(
         'px-4 py-3 text-sm text-gray-900 dark:text-gray-100 whitespace-nowrap',
         className
       )}
+      onClick={onClick}
     >
       {children}
     </td>

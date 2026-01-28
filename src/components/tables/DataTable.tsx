@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Table,
@@ -30,12 +30,111 @@ import type {
   SortConfig,
   TablePermissions,
 } from '@/types';
-import { Plus, Download } from 'lucide-react';
+import { Plus, Download, Check, X, Loader2 } from 'lucide-react';
+
+// Tables that support inline editing with their editable columns
+// If a table is listed here, only the specified columns will be editable
+const INLINE_EDITABLE_COLUMNS: Record<string, string[]> = {
+  product_lab_markup: ['cost', 'standard_price', 'nf_price', 'commitment_eligible'],
+  product_lab_rev_share: [], // Uses dynamic fee_ columns, handled separately
+};
+
+// Columns that should NEVER be editable inline (safety check)
+const NON_EDITABLE_COLUMNS = ['id', 'created_at', 'updated_at'];
+
+// Tables with custom endpoints and data transformation
+const CUSTOM_TABLE_CONFIG: Record<string, {
+  endpoint: string;
+  patchEndpoint?: string;
+  appendRowIdToPatch?: boolean; // Whether to append rowId to patchEndpoint
+  transformData?: (data: Record<string, unknown>[]) => {
+    rows: Record<string, unknown>[];
+    dynamicColumns: TableColumn[];
+  };
+  getPatchBody?: (row: Record<string, unknown>, columnKey: string, value: unknown) => Record<string, unknown>;
+}> = {
+  product_lab_markup: {
+    endpoint: '/api/tables/product_lab_markup/rows',
+    patchEndpoint: '/api/tables/product_lab_markup/rows',
+    appendRowIdToPatch: false,
+    getPatchBody: (row, columnKey, value) => {
+      // Send identifiers + only the field being updated
+      return {
+        lab_id: row.lab_id,
+        lab_product_id: row.lab_product_id,
+        [columnKey]: value === '' ? null : value,
+      };
+    },
+  },
+  product_lab_rev_share: {
+    endpoint: '/api/tables/product_lab_rev_share/rows',
+    patchEndpoint: '/api/tables/product_lab_rev_share/rows',
+    appendRowIdToPatch: false,
+    transformData: (data) => {
+      // Extract all unique schedule names from fee_schedules
+      const scheduleNames = new Set<string>();
+      data.forEach((row) => {
+        const feeSchedules = row.fee_schedules as Record<string, { revenue_share: number | null; commitment_eligible: boolean | null }> | undefined;
+        if (feeSchedules) {
+          Object.keys(feeSchedules).forEach((name) => scheduleNames.add(name));
+        }
+      });
+      const sortedSchedules = Array.from(scheduleNames).sort();
+
+      // Generate dynamic columns for each schedule
+      const dynamicColumns: TableColumn[] = sortedSchedules.map((name) => ({
+        key: `fee_${name}`,
+        label: name,
+        type: 'number' as const,
+        sortable: false,
+        filterable: false,
+        editable: true,
+        required: false,
+      }));
+
+      // Flatten rows - extract revenue_share from each fee_schedule
+      const rows = data.map((row) => {
+        const flatRow: Record<string, unknown> = {
+          lab_id: row.lab_id,
+          lab_product_id: row.lab_product_id,
+          incisive_product_id: row.incisive_product_id,
+        };
+
+        const feeSchedules = row.fee_schedules as Record<string, { revenue_share: number | null; commitment_eligible: boolean | null }> | undefined;
+        sortedSchedules.forEach((name) => {
+          flatRow[`fee_${name}`] = feeSchedules?.[name]?.revenue_share ?? null;
+        });
+
+        return flatRow;
+      });
+
+      return { rows, dynamicColumns };
+    },
+    getPatchBody: (row, columnKey, value) => {
+      // Extract schedule name from column key (remove 'fee_' prefix)
+      const scheduleName = columnKey.replace('fee_', '');
+      return {
+        lab_id: row.lab_id,
+        lab_product_id: row.lab_product_id,
+        incisive_product_id: row.incisive_product_id,
+        schedule_name: scheduleName,
+        revenue_share: value === '' || value === null ? null : parseFloat(String(value)),
+      };
+    },
+  },
+};
 
 interface DataTableProps {
   tableName: string;
   config: TableConfig | null;
   isLoadingConfig: boolean;
+}
+
+interface EditingCell {
+  rowIndex: number;  // For tracking which row (React key)
+  rowId: string;     // For API calls
+  columnKey: string;
+  originalValue: unknown;
 }
 
 // Helper to generate columns from data
@@ -74,8 +173,13 @@ function getColumnType(key: string, value: unknown): TableColumn['type'] {
 export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps) {
   const router = useRouter();
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [rawRows, setRawRows] = useState<Record<string, unknown>[]>([]); // Original data before transformation
   const [autoColumns, setAutoColumns] = useState<TableColumn[]>([]);
+  const [dynamicColumns, setDynamicColumns] = useState<TableColumn[]>([]); // For transformed tables
   const [isLoading, setIsLoading] = useState(true);
+
+  // Get custom config for this table
+  const customConfig = CUSTOM_TABLE_CONFIG[tableName];
   const [page, setPage] = useState(1);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalPages, setTotalPages] = useState(1);
@@ -86,9 +190,36 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activatingId, setActivatingId] = useState<string | null>(null);
 
-  const fetchRows = useCallback(async () => {
-    if (!config) return;
+  // Inline editing state
+  const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
+  const [isSavingCell, setIsSavingCell] = useState(false);
 
+  // Ref to track if a fetch is in progress
+  const fetchInProgress = useRef(false);
+  const fetchAbortController = useRef<AbortController | null>(null);
+
+  // Check if this table supports inline editing
+  const supportsInlineEdit = tableName in INLINE_EDITABLE_COLUMNS;
+  const editableColumns = INLINE_EDITABLE_COLUMNS[tableName] || [];
+
+
+  const fetchRows = useCallback(async () => {
+    // Allow fetch for custom tables even without config
+    if (!config && !customConfig) return;
+
+    // Prevent duplicate concurrent fetches
+    if (fetchInProgress.current) {
+      return;
+    }
+
+    // Cancel any previous fetch
+    if (fetchAbortController.current) {
+      fetchAbortController.current.abort();
+    }
+    fetchAbortController.current = new AbortController();
+
+    fetchInProgress.current = true;
     setIsLoading(true);
     try {
       const params = new URLSearchParams({
@@ -116,7 +247,14 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
         params.append('filters', JSON.stringify(activeFilters));
       }
 
-      const response = await fetchWithAuth(`/api/tables/${tableName}/rows?${params}`);
+      // Use custom endpoint if configured, otherwise default
+      const endpoint = customConfig?.endpoint
+        ? `${customConfig.endpoint}?${params}`
+        : `/api/tables/${tableName}/rows?${params}`;
+
+      const response = await fetchWithAuth(endpoint, {
+        signal: fetchAbortController.current?.signal,
+      });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || 'Failed to fetch rows');
@@ -133,34 +271,66 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
       const rowsData = result.data || result.rows || [];
       const meta = result.meta || result.pagination || {};
 
-      setRows(rowsData);
+      // Apply data transformation if configured
+      if (customConfig?.transformData) {
+        const { rows: transformedRows, dynamicColumns: dynCols } = customConfig.transformData(rowsData);
+        setRawRows(rowsData);
+        setRows(transformedRows);
+        setDynamicColumns(dynCols);
+      } else {
+        setRawRows(rowsData);
+        setRows(rowsData);
+        setDynamicColumns([]);
+      }
+
       setTotalPages(meta.totalPages || meta.total_pages || 1);
       setTotal(meta.total || rowsData.length);
 
-      // Auto-generate columns if no config provided
-      if (!config && rowsData.length > 0) {
+      // Auto-generate columns if no config provided and no custom transform
+      if (!config && !customConfig && rowsData.length > 0) {
         setAutoColumns(generateColumnsFromData(rowsData));
       }
     } catch (error) {
+      // Ignore abort errors
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
       console.error('Error fetching rows:', error);
       toast.error('Failed to load data');
     } finally {
+      fetchInProgress.current = false;
       setIsLoading(false);
     }
-  }, [tableName, config, page, pageSize, sort, filters, search]);
+  }, [tableName, config, customConfig, page, pageSize, sort, filters, search]);
 
+  // Set default sort from config
   useEffect(() => {
-    if (config?.default_sort) {
+    if (config?.default_sort && !sort) {
       setSort(config.default_sort);
     }
-  }, [config]);
+  }, [config, sort]);
 
+  // Single fetch effect - handles both custom and regular tables
   useEffect(() => {
-    // Fetch rows even if config is not loaded yet
-    if (!isLoadingConfig) {
+    // For custom tables, fetch immediately (don't wait for config)
+    if (customConfig) {
+      fetchRows();
+      return;
+    }
+
+    // For regular tables, wait for config to be loaded
+    if (!isLoadingConfig && config) {
       fetchRows();
     }
-  }, [fetchRows, isLoadingConfig]);
+
+    // Cleanup: abort fetch on unmount or dependency change
+    return () => {
+      if (fetchAbortController.current) {
+        fetchAbortController.current.abort();
+      }
+      fetchInProgress.current = false;
+    };
+  }, [tableName, isLoadingConfig, config, customConfig, page, pageSize, sort, filters, search, fetchRows]);
 
   const handleSort = (column: string) => {
     setSort((prev) => ({
@@ -263,6 +433,104 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
     router.push(`/tables/${tableName}/new`);
   };
 
+  // Inline edit handlers
+  const handleCellClick = (rowIndex: number, rowId: string, columnKey: string, currentValue: unknown) => {
+    if (!supportsInlineEdit) return;
+    if (NON_EDITABLE_COLUMNS.includes(columnKey)) return;
+    // Only allow editing columns in the editable list or dynamic fee_ columns
+    if (!editableColumns.includes(columnKey) && !columnKey.startsWith('fee_')) return;
+    if (editingCell?.rowIndex === rowIndex && editingCell?.columnKey === columnKey) return;
+
+    setEditingCell({ rowIndex, rowId, columnKey, originalValue: currentValue });
+    setEditValue(currentValue !== null && currentValue !== undefined ? String(currentValue) : '');
+  };
+
+  const handleCellBlur = async () => {
+    if (!editingCell) return;
+
+    const { rowIndex, rowId, columnKey, originalValue } = editingCell;
+    const newValue = editValue;
+
+    // If value hasn't changed, just cancel
+    if (String(originalValue ?? '') === newValue) {
+      setEditingCell(null);
+      setEditValue('');
+      return;
+    }
+
+    // Get the current row by index
+    const currentRow = rows[rowIndex];
+
+    // Save the new value
+    setIsSavingCell(true);
+    try {
+      // Use custom PATCH endpoint and body if configured
+      let endpoint: string;
+      let body: Record<string, unknown>;
+
+      if (customConfig?.getPatchBody) {
+        // Use custom endpoint, optionally append rowId
+        const baseEndpoint = customConfig.patchEndpoint || `/api/tables/${tableName}/rows`;
+        endpoint = customConfig.appendRowIdToPatch !== false
+          ? `${baseEndpoint}/${rowId}`
+          : baseEndpoint;
+        body = customConfig.getPatchBody(currentRow, columnKey, newValue);
+      } else {
+        endpoint = `/api/tables/${tableName}/rows/${rowId}`;
+        body = { [columnKey]: newValue };
+      }
+
+      const response = await fetchWithAuth(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to update');
+      }
+
+      // Update local state
+      setRows((prevRows) =>
+        prevRows.map((row, idx) => {
+          if (idx === rowIndex) {
+            return { ...row, [columnKey]: newValue };
+          }
+          return row;
+        })
+      );
+
+      toast.success('Updated successfully');
+    } catch (error) {
+      console.error('Error updating cell:', error);
+      toast.error('Failed to update');
+      // Revert to original value in UI
+      setRows((prevRows) =>
+        prevRows.map((row, idx) => {
+          if (idx === rowIndex) {
+            return { ...row, [columnKey]: originalValue };
+          }
+          return row;
+        })
+      );
+    } finally {
+      setIsSavingCell(false);
+      setEditingCell(null);
+      setEditValue('');
+    }
+  };
+
+  const handleCellKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      (e.target as HTMLInputElement).blur();
+    } else if (e.key === 'Escape') {
+      setEditingCell(null);
+      setEditValue('');
+    }
+  };
+
   const handleDownloadCSV = () => {
     if (!rows.length || !columns.length) {
       toast.error('No data to download');
@@ -342,7 +610,11 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
   }
 
   // Use config columns if available, otherwise use auto-generated columns
-  const columns = config?.columns || autoColumns;
+  // For custom tables with dynamic columns, merge fixed columns with dynamic ones
+  const baseColumns = config?.columns || autoColumns;
+  const columns = customConfig?.transformData
+    ? [...baseColumns.filter(col => !col.key.startsWith('fee_')), ...dynamicColumns]
+    : baseColumns;
   const permissions = config?.permissions || {
     read: true,
     create: false,
@@ -422,22 +694,55 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
               <TableEmpty colSpan={columns.length + 1} />
             ) : (
               rows.map((row, index) => {
-                // Find the row ID - could be 'id' or '{tableName}_id' or first column ending with '_id'
-                const rowId = String(
-                  row.id ??
-                  row[`${tableName.replace(/s$/, '')}_id`] ??
-                  row[Object.keys(row).find(k => k.endsWith('_id')) || 'id'] ??
-                  index
-                );
+                // Find the row ID for API calls
+                const rowId = customConfig?.transformData
+                  ? `${row.lab_id}-${row.lab_product_id}`
+                  : String(
+                      row.id ??
+                      row[`${tableName.replace(/s$/, '')}_id`] ??
+                      row[Object.keys(row).find(k => k.endsWith('_id')) || 'id'] ??
+                      index
+                    );
+                // Use index-based key for React to ensure uniqueness
+                const reactKey = `row-${index}`;
                 const isActive = Boolean(row.is_active ?? row.active ?? true);
 
                 return (
-                  <TableRow key={rowId}>
-                    {columns.map((column) => (
-                      <TableCell key={column.key}>
-                        {renderCellValue(column, row[column.key])}
-                      </TableCell>
-                    ))}
+                  <TableRow key={reactKey}>
+                    {columns.map((column) => {
+                      const isEditing = editingCell?.rowIndex === index && editingCell?.columnKey === column.key;
+                      // Check if column is editable: must be in editable list OR be a dynamic fee_ column for rev_share table
+                      const isEditableColumn = supportsInlineEdit &&
+                        !NON_EDITABLE_COLUMNS.includes(column.key) &&
+                        (editableColumns.includes(column.key) || column.key.startsWith('fee_'));
+
+                      return (
+                        <TableCell
+                          key={column.key}
+                          onClick={() => isEditableColumn && handleCellClick(index, rowId, column.key, row[column.key])}
+                          className={isEditableColumn ? 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50' : ''}
+                        >
+                          {isEditing ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type={column.type === 'number' ? 'number' : 'text'}
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onBlur={handleCellBlur}
+                                onKeyDown={handleCellKeyDown}
+                                autoFocus
+                                className="min-w-[120px] w-full px-2 py-1 text-sm border border-primary-500 rounded focus:outline-none focus:ring-1 focus:ring-primary-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                              />
+                              {isSavingCell && (
+                                <Loader2 className="h-4 w-4 animate-spin text-primary-500" />
+                              )}
+                            </div>
+                          ) : (
+                            renderCellValue(column, row[column.key])
+                          )}
+                        </TableCell>
+                      );
+                    })}
                     <TableCell>
                       <TableActions
                         permissions={permissions}
