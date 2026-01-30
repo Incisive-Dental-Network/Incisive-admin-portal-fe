@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1';
 
+// In-memory cache for ongoing refresh operations to prevent race conditions
+// with single-use refresh tokens
+let refreshPromise: Promise<{ accessToken: string; refreshToken: string } | null> | null = null;
+let refreshPromiseToken: string | null = null; // Track which refresh token is being used
+
 async function proxyRequest(
   request: NextRequest,
   path: string,
@@ -32,32 +37,60 @@ async function refreshAccessToken(refreshToken: string): Promise<{
   accessToken: string;
   refreshToken: string;
 } | null> {
-  try {
-    const response = await fetch(`${API_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      // Backend might expect camelCase
-      body: JSON.stringify({ refreshToken: refreshToken }),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    let data = await response.json();
-
-    // Handle wrapped response: { success: true, data: {...} }
-    if (data.success && data.data) {
-      data = data.data;
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Token refresh error:', error);
-    return null;
+  // If there's already an ongoing refresh with the same token, wait for it
+  if (refreshPromise && refreshPromiseToken === refreshToken) {
+    console.log('[Proxy] Waiting for existing refresh operation...');
+    return refreshPromise;
   }
+
+  // Start a new refresh operation
+  refreshPromiseToken = refreshToken;
+  refreshPromise = (async () => {
+    try {
+      console.log('[Proxy] Attempting token refresh...');
+      const response = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Proxy] Refresh failed:', response.status, errorText);
+        return null;
+      }
+
+      let data = await response.json();
+
+      // Handle wrapped response: { success: true, data: {...} }
+      if (data.success && data.data) {
+        data = data.data;
+      }
+
+      if (!data.accessToken) {
+        console.error('[Proxy] No accessToken in refresh response');
+        return null;
+      }
+
+      console.log('[Proxy] Token refresh successful');
+      return data;
+    } catch (error) {
+      console.error('[Proxy] Token refresh error:', error);
+      return null;
+    } finally {
+      // Clear the promise after a short delay to allow concurrent requests to benefit
+      setTimeout(() => {
+        if (refreshPromiseToken === refreshToken) {
+          refreshPromise = null;
+          refreshPromiseToken = null;
+        }
+      }, 1000);
+    }
+  })();
+
+  return refreshPromise;
 }
 
 async function handleRequest(
@@ -77,9 +110,13 @@ async function handleRequest(
 
     // If unauthorized, try to refresh token
     if (response.status === 401 && refreshToken) {
+      console.log(`[Proxy] 401 on ${request.method} /${pathString}, attempting refresh...`);
       newTokens = await refreshAccessToken(refreshToken);
       if (newTokens) {
         response = await proxyRequest(request, pathString, newTokens.accessToken);
+        console.log(`[Proxy] Retry status: ${response.status}`);
+      } else {
+        console.log('[Proxy] Token refresh failed');
       }
     }
 

@@ -72,7 +72,7 @@ export default function TablePage({ params }: TablePageProps) {
         </Link>
         <span className="text-gray-400 dark:text-gray-500">/</span>
         <span className="text-gray-900 dark:text-white font-medium">
-          {config?.label || tableName}
+          {config?.label || tableName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
         </span>
       </div>
 

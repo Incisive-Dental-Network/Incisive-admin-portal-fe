@@ -1,4 +1,5 @@
-import { UserPermissions, UserRole } from './auth.types';
+import { UserPermissions } from './permission.types';
+import { UserRole } from './auth.types';
 
 export interface User {
   id: string;

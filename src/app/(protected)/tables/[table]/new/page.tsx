@@ -12,6 +12,11 @@ import { fetchWithAuth } from '@/lib/fetch-client';
 import { ChevronLeft } from 'lucide-react';
 import type { TableConfig } from '@/types';
 
+// Columns to exclude for specific tables (not provided by backend)
+  const EXCLUDED_COLUMNS: Record<string, string[]> = {
+    product_lab_markup: ['incisive_product_id'],
+  };
+
 export default function NewRowPage() {
   const params = useParams();
   const tableName = params.table as string;
@@ -71,7 +76,12 @@ export default function NewRowPage() {
         newRow = newRow.data;
       }
       toast.success('Record created successfully');
-      router.push(`${ROUTES.TABLES}/${tableName}/${newRow.id}`);
+      // Redirect to detail page if ID exists, otherwise to table list
+      if (newRow.id) {
+        router.push(`${ROUTES.TABLES}/${tableName}/${newRow.id}`);
+      } else {
+        router.push(`${ROUTES.TABLES}/${tableName}`);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to create record';
       toast.error(message);
@@ -155,7 +165,7 @@ export default function NewRowPage() {
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
         <DynamicForm
           tableName={tableName}
-          columns={config.columns}
+          columns={config.columns.filter((col) => !EXCLUDED_COLUMNS[tableName]?.includes(col.key))}
           onSubmit={handleCreate}
           onCancel={handleCancel}
           isLoading={isCreating}

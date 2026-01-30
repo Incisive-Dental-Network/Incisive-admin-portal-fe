@@ -145,7 +145,7 @@ function TableCard({ table }: TableCardProps) {
           </p>
           <div className="flex items-center gap-4 mt-3">
             <span className="text-xs text-gray-400 dark:text-gray-500">
-              {table.row_count} records
+              {table.rowCount} records
             </span>
             <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">{table.name}</span>
           </div>

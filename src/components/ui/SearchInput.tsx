@@ -6,7 +6,7 @@ import { Search, X } from 'lucide-react';
 import { DEBOUNCE_DELAY } from '@/config/ui.constants';
 
 export interface SearchInputProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'defaultValue'> {
+  extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   onSearch: (value: string) => void;
   debounceMs?: number;
   showClearButton?: boolean;
@@ -20,12 +20,12 @@ const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
       debounceMs = DEBOUNCE_DELAY,
       showClearButton = true,
       placeholder = 'Search...',
-      defaultValue: _,
+      defaultValue = '',
       ...props
     },
     ref
   ) => {
-    const [value, setValue] = useState('');
+    const [value, setValue] = useState(String(defaultValue));
 
     const debouncedSearch = useCallback(
       debounce((searchValue: string) => {

@@ -47,6 +47,7 @@ const CUSTOM_TABLE_CONFIG: Record<string, {
   endpoint: string;
   patchEndpoint?: string;
   appendRowIdToPatch?: boolean; // Whether to append rowId to patchEndpoint
+  visibleBaseColumns?: string[]; // Which base columns to show (if transformData is used)
   transformData?: (data: Record<string, unknown>[]) => {
     rows: Record<string, unknown>[];
     dynamicColumns: TableColumn[];
@@ -57,6 +58,7 @@ const CUSTOM_TABLE_CONFIG: Record<string, {
     endpoint: '/api/tables/product_lab_markup/rows',
     patchEndpoint: '/api/tables/product_lab_markup/rows',
     appendRowIdToPatch: false,
+    visibleBaseColumns: ['lab_id', 'lab_product_id', 'cost', 'standard_price', 'nf_price', 'commitment_eligible'],
     getPatchBody: (row, columnKey, value) => {
       // Send identifiers + only the field being updated
       return {
@@ -70,11 +72,12 @@ const CUSTOM_TABLE_CONFIG: Record<string, {
     endpoint: '/api/tables/product_lab_rev_share/rows',
     patchEndpoint: '/api/tables/product_lab_rev_share/rows',
     appendRowIdToPatch: false,
+    visibleBaseColumns: ['lab_id', 'lab_product_id'],
     transformData: (data) => {
-      // Extract all unique schedule names from fee_schedules
+      // Extract all unique schedule names from schedule_name
       const scheduleNames = new Set<string>();
       data.forEach((row) => {
-        const feeSchedules = row.fee_schedules as Record<string, { revenue_share: number | null; commitment_eligible: boolean | null }> | undefined;
+        const feeSchedules = row.schedule_name as Record<string, number | null> | undefined;
         if (feeSchedules) {
           Object.keys(feeSchedules).forEach((name) => scheduleNames.add(name));
         }
@@ -92,17 +95,16 @@ const CUSTOM_TABLE_CONFIG: Record<string, {
         required: false,
       }));
 
-      // Flatten rows - extract revenue_share from each fee_schedule
+      // Flatten rows - schedule_name values are directly the revenue_share
       const rows = data.map((row) => {
         const flatRow: Record<string, unknown> = {
           lab_id: row.lab_id,
           lab_product_id: row.lab_product_id,
-          incisive_product_id: row.incisive_product_id,
         };
 
-        const feeSchedules = row.fee_schedules as Record<string, { revenue_share: number | null; commitment_eligible: boolean | null }> | undefined;
+        const feeSchedules = row.schedule_name as Record<string, number | null> | undefined;
         sortedSchedules.forEach((name) => {
-          flatRow[`fee_${name}`] = feeSchedules?.[name]?.revenue_share ?? null;
+          flatRow[`fee_${name}`] = feeSchedules?.[name] ?? null;
         });
 
         return flatRow;
@@ -116,7 +118,6 @@ const CUSTOM_TABLE_CONFIG: Record<string, {
       return {
         lab_id: row.lab_id,
         lab_product_id: row.lab_product_id,
-        incisive_product_id: row.incisive_product_id,
         schedule_name: scheduleName,
         revenue_share: value === '' || value === null ? null : parseFloat(String(value)),
       };
@@ -355,27 +356,52 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
   };
 
   const handleView = (id: string) => {
-    router.push(`/tables/${tableName}/${id}`);
+    router.push(`/tables/${tableName}/${encodeURIComponent(id)}`);
   };
 
   const handleEdit = (id: string) => {
-    router.push(`/tables/${tableName}/${id}?edit=true`);
+    router.push(`/tables/${tableName}/${encodeURIComponent(id)}?edit=true`);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, row?: Record<string, unknown>) => {
     setDeletingId(id);
     try {
-      const response = await fetchWithAuth(`/api/tables/${tableName}/rows/${id}`, {
-        method: 'DELETE',
-      });
+      let response;
 
-      if (!response.ok) throw new Error('Failed to delete');
+      // For composite key tables (product_lab_rev_share, product_lab_markup), send DELETE with JSON body
+      const compositeKeyTables = ['product_lab_rev_share', 'product_lab_markup'];
+      if (compositeKeyTables.includes(tableName) && row) {
+        response = await fetchWithAuth(`/api/tables/${tableName}/rows`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lab_id: row.lab_id,
+            lab_product_id: row.lab_product_id,
+          }),
+        });
+      } else if (tableName === 'fee_schedules' && row) {
+        // For fee_schedules, use schedule_name as the identifier
+        const scheduleName = encodeURIComponent(String(row.schedule_name || ''));
+        response = await fetchWithAuth(`/api/tables/${tableName}/rows/${scheduleName}`, {
+          method: 'DELETE',
+        });
+      } else {
+        response = await fetchWithAuth(`/api/tables/${tableName}/rows/${id}`, {
+          method: 'DELETE',
+        });
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to delete');
+      }
 
       toast.success('Item deleted successfully');
       fetchRows();
     } catch (error) {
       console.error('Error deleting:', error);
-      toast.error('Failed to delete item');
+      const message = error instanceof Error ? error.message : 'Failed to delete item';
+      toast.error(message);
     } finally {
       setDeletingId(null);
     }
@@ -384,8 +410,10 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
   const handleActivate = async (id: string) => {
     setActivatingId(id);
     try {
+      // Encode ID for URL (important for fee_schedules which uses schedule_name)
+      const encodedId = encodeURIComponent(id);
       const response = await fetchWithAuth(
-        `/api/tables/${tableName}/rows/${id}`,
+        `/api/tables/${tableName}/rows/${encodedId}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -408,8 +436,10 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
   const handleDeactivate = async (id: string) => {
     setActivatingId(id);
     try {
+      // Encode ID for URL (important for fee_schedules which uses schedule_name)
+      const encodedId = encodeURIComponent(id);
       const response = await fetchWithAuth(
-        `/api/tables/${tableName}/rows/${id}`,
+        `/api/tables/${tableName}/rows/${encodedId}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -612,9 +642,12 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
   // Use config columns if available, otherwise use auto-generated columns
   // For custom tables with dynamic columns, merge fixed columns with dynamic ones
   const baseColumns = config?.columns || autoColumns;
-  const columns = customConfig?.transformData
-    ? [...baseColumns.filter(col => !col.key.startsWith('fee_')), ...dynamicColumns]
+  const filteredBaseColumns = customConfig?.visibleBaseColumns
+    ? baseColumns.filter(col => customConfig.visibleBaseColumns!.includes(col.key))
     : baseColumns;
+  const columns = customConfig?.transformData
+    ? [...filteredBaseColumns, ...dynamicColumns]
+    : filteredBaseColumns;
   const permissions = config?.permissions || {
     read: true,
     create: false,
@@ -686,7 +719,7 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
                   {column.label}
                 </TableHeaderCell>
               ))}
-              <TableHeaderCell className="w-24">Actions</TableHeaderCell>
+              <TableHeaderCell className="w-24" sticky>Actions</TableHeaderCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -695,14 +728,21 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
             ) : (
               rows.map((row, index) => {
                 // Find the row ID for API calls
-                const rowId = customConfig?.transformData
-                  ? `${row.lab_id}-${row.lab_product_id}`
-                  : String(
-                      row.id ??
-                      row[`${tableName.replace(/s$/, '')}_id`] ??
-                      row[Object.keys(row).find(k => k.endsWith('_id')) || 'id'] ??
-                      index
-                    );
+                // Use composite key for tables without a single primary key
+                const compositeKeyTables = ['product_lab_rev_share', 'product_lab_markup'];
+                let rowId: string;
+                if (compositeKeyTables.includes(tableName)) {
+                  rowId = `${row.lab_id}-${row.lab_product_id}`;
+                } else if (tableName === 'fee_schedules') {
+                  rowId = String(row.schedule_name || '');
+                } else {
+                  rowId = String(
+                    row.id ??
+                    row[`${tableName.replace(/s$/, '')}_id`] ??
+                    row[Object.keys(row).find(k => k.endsWith('_id')) || 'id'] ??
+                    index
+                  );
+                }
                 // Use index-based key for React to ensure uniqueness
                 const reactKey = `row-${index}`;
                 const isActive = Boolean(row.is_active ?? row.active ?? true);
@@ -743,12 +783,12 @@ export function DataTable({ tableName, config, isLoadingConfig }: DataTableProps
                         </TableCell>
                       );
                     })}
-                    <TableCell>
+                    <TableCell sticky>
                       <TableActions
                         permissions={permissions}
                         onView={() => handleView(rowId)}
                         onEdit={() => handleEdit(rowId)}
-                        onDelete={() => handleDelete(rowId)}
+                        onDelete={() => handleDelete(rowId, row)}
                         onActivate={() => handleActivate(rowId)}
                         onDeactivate={() => handleDeactivate(rowId)}
                         isActive={isActive}

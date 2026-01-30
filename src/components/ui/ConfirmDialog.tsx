@@ -28,9 +28,9 @@ export function ConfirmDialog({
   isLoading = false,
 }: ConfirmDialogProps) {
   const iconColors = {
-    danger: 'text-red-600 bg-red-100',
-    warning: 'text-yellow-600 bg-yellow-100',
-    default: 'text-blue-600 bg-blue-100',
+    danger: 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/30',
+    warning: 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30',
+    default: 'text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900/30',
   };
 
   const buttonVariants = {
@@ -48,10 +48,10 @@ export function ConfirmDialog({
           <AlertTriangle className="h-6 w-6" />
         </div>
 
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{title}</h3>
 
         {description && (
-          <p className="text-sm text-gray-500 mb-4">{description}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{description}</p>
         )}
 
         <ModalFooter className="w-full justify-center">

@@ -71,6 +71,7 @@ interface TableHeaderCellProps {
   sortable?: boolean;
   sorted?: 'asc' | 'desc' | false;
   onSort?: () => void;
+  sticky?: boolean;
 }
 
 export function TableHeaderCell({
@@ -79,12 +80,14 @@ export function TableHeaderCell({
   sortable,
   sorted,
   onSort,
+  sticky,
 }: TableHeaderCellProps) {
   return (
     <th
       className={cn(
         'px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider',
         sortable && 'cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-700',
+        sticky && 'sticky right-0 z-10 bg-gray-50 dark:bg-gray-800 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]',
         className
       )}
       onClick={sortable ? onSort : undefined}
@@ -105,13 +108,15 @@ interface TableCellProps {
   children?: ReactNode;
   className?: string;
   onClick?: () => void;
+  sticky?: boolean;
 }
 
-export function TableCell({ children, className, onClick }: TableCellProps) {
+export function TableCell({ children, className, onClick, sticky }: TableCellProps) {
   return (
     <td
       className={cn(
         'px-4 py-3 text-sm text-gray-900 dark:text-gray-100 whitespace-nowrap',
+        sticky && 'sticky right-0 z-10 bg-white dark:bg-gray-900 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]',
         className
       )}
       onClick={onClick}

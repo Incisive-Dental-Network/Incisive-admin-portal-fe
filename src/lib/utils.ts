@@ -68,7 +68,8 @@ export function slugToTitle(slug: string): string {
     .join(' ');
 }
 
-export function debounce<T extends (...args: unknown[]) => unknown>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
