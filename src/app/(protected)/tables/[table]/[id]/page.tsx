@@ -75,15 +75,31 @@ export default function RowDetailPage() {
   const getRowFetchUrl = () => {
     const compositeKeys = COMPOSITE_KEY_TABLES[tableName];
     if (compositeKeys) {
-      // Split only on first hyphen to handle values that contain hyphens (e.g., "08540-SB")
-      const firstHyphenIndex = id.indexOf('-');
       const filters: Record<string, string> = {};
-      if (firstHyphenIndex !== -1) {
-        filters[compositeKeys[0]] = id.substring(0, firstHyphenIndex);
-        filters[compositeKeys[1]] = id.substring(firstHyphenIndex + 1);
+
+      // Check if id is a JSON string (e.g., {"lab_id":"1","lab_product_id":"12344"})
+      if (id.startsWith('{') && id.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(id);
+          compositeKeys.forEach((key) => {
+            if (parsed[key] !== undefined) {
+              filters[key] = String(parsed[key]);
+            }
+          });
+        } catch {
+          // If JSON parse fails, treat as regular id
+          filters[compositeKeys[0]] = id;
+        }
       } else {
-        // Fallback if no hyphen found
-        filters[compositeKeys[0]] = id;
+        // Split only on first hyphen to handle values that contain hyphens (e.g., "08540-SB")
+        const firstHyphenIndex = id.indexOf('-');
+        if (firstHyphenIndex !== -1) {
+          filters[compositeKeys[0]] = id.substring(0, firstHyphenIndex);
+          filters[compositeKeys[1]] = id.substring(firstHyphenIndex + 1);
+        } else {
+          // Fallback if no hyphen found
+          filters[compositeKeys[0]] = id;
+        }
       }
       return `/api/tables/${tableName}/rows?filters=${encodeURIComponent(JSON.stringify(filters))}`;
     }

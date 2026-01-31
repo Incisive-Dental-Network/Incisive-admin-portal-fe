@@ -76,8 +76,14 @@ export default function NewRowPage() {
         newRow = newRow.data;
       }
       toast.success('Record created successfully');
-      // Redirect to detail page if ID exists, otherwise to table list
-      if (newRow.id) {
+
+      // Redirect to detail page
+      // Handle composite key tables (product_lab_markup, product_lab_rev_share)
+      const compositeKeyTables = ['product_lab_rev_share', 'product_lab_markup'];
+      if (compositeKeyTables.includes(tableName) && newRow.lab_id && newRow.lab_product_id) {
+        const compositeId = `${newRow.lab_id}-${newRow.lab_product_id}`;
+        router.push(`${ROUTES.TABLES}/${tableName}/${encodeURIComponent(compositeId)}`);
+      } else if (newRow.id) {
         router.push(`${ROUTES.TABLES}/${tableName}/${newRow.id}`);
       } else {
         router.push(`${ROUTES.TABLES}/${tableName}`);
