@@ -35,7 +35,24 @@ const STATIC_SELECT_OPTIONS: Record<string, Record<string, ColumnOption[]>> = {
 
 // Fields that should be treated as required (in addition to column.required from API)
 const REQUIRED_FIELDS: Record<string, string[]> = {
-  dental_practices: ['dental_group_id'],
+  dental_practices: ['dental_group_id', 'dental_group_name'],
+};
+
+// Auto-fill configuration - when a field changes, automatically set another field's value
+const AUTO_FILL_CONFIG: Record<string, Record<string, {
+  targetField: string;
+  extractValue: (option: { value: string; label: string }) => string;
+}>> = {
+  dental_practices: {
+    dental_group_id: {
+      targetField: 'dental_group_name',
+      // Extract name from label format "id : name"
+      extractValue: (option) => {
+        const parts = option.label.split(' : ');
+        return parts.length > 1 ? parts[1] : option.label;
+      },
+    },
+  },
 };
 
 // Custom create form fields for specific tables (overrides default columns)
@@ -106,6 +123,16 @@ const FOREIGN_KEY_CONFIG: Record<string, {
     labelKey: 'name',
     labelFormat: (item) => `${item.dental_group_id} : ${item.name}`,
     forTable: 'dental_groups',
+    useTypeahead: true,
+  },
+  fee_schedule: {
+    endpoint: '/api/tables/fee_schedules/rows',
+    searchEndpoint: '/api/tables/fee_schedules/rows',
+    searchParam: 'search',
+    dataKey: 'data',
+    valueKey: 'schedule_name',
+    labelKey: 'schedule_name',
+    forTable: 'fee_schedules',
     useTypeahead: true,
   },
 };
@@ -244,8 +271,16 @@ export function DynamicForm({
           data = json;
         } else if (json.success && Array.isArray(json.data)) {
           data = json.data;
+        } else if (json.success && json.data?.data && Array.isArray(json.data.data)) {
+          // Handle nested response: { success: true, data: { data: [...], meta: {...} } }
+          data = json.data.data;
         } else if (json[fkConfig.dataKey]) {
-          data = json[fkConfig.dataKey];
+          const extracted = json[fkConfig.dataKey];
+          if (Array.isArray(extracted)) {
+            data = extracted;
+          } else if (extracted?.data && Array.isArray(extracted.data)) {
+            data = extracted.data;
+          }
         } else if (json.data && json.data[fkConfig.dataKey]) {
           // Handle nested response: { success: true, data: { dentalGroups: [...] } }
           data = json.data[fkConfig.dataKey];
@@ -473,8 +508,17 @@ export function DynamicForm({
               data = json;
             } else if (json.success && Array.isArray(json.data)) {
               data = json.data;
+            } else if (json.success && json.data?.data && Array.isArray(json.data.data)) {
+              // Handle nested response: { success: true, data: { data: [...], meta: {...} } }
+              data = json.data.data;
             } else if (fkConfig && json[fkConfig.dataKey]) {
-              data = json[fkConfig.dataKey];
+              const extracted = json[fkConfig.dataKey];
+              // Check if extracted is an object with nested data array
+              if (Array.isArray(extracted)) {
+                data = extracted;
+              } else if (extracted?.data && Array.isArray(extracted.data)) {
+                data = extracted.data;
+              }
             } else if (json.data && typeof json.data === 'object') {
               const arrays = Object.values(json.data).filter(Array.isArray);
               if (arrays.length > 0) {
@@ -811,13 +855,20 @@ export function DynamicForm({
                 ...prev,
                 [column.key]: option.label,
               }));
+
+              // Auto-fill related fields if configured
+              const autoFillConfig = tableName && AUTO_FILL_CONFIG[tableName]?.[column.key];
+              if (autoFillConfig) {
+                const autoFillValue = autoFillConfig.extractValue(option);
+                handleChange(autoFillConfig.targetField, autoFillValue);
+              }
             }
           }}
           error={errors[column.key]}
           required={column.required}
           placeholder={`Search ${column.label}...`}
           debounceMs={300}
-          minChars={1}
+          minChars={0}
           restrictToOptions
         />
       );

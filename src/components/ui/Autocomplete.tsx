@@ -73,7 +73,7 @@ export function Autocomplete({
         clearTimeout(debounceTimerRef.current);
       }
 
-      if (query.length < minChars) {
+      if (query.length < minChars && minChars > 0) {
         setOptions([]);
         setIsOpen(false);
         return;
@@ -155,6 +155,9 @@ export function Autocomplete({
     // Show dropdown if we have options and input has content
     if (options.length > 0 && inputValue.length >= minChars) {
       setIsOpen(true);
+    } else if (minChars === 0 && options.length === 0) {
+      // Load initial options on focus when minChars is 0
+      searchWithDebounce('');
     }
   };
 
@@ -168,12 +171,32 @@ export function Autocomplete({
       }
       // If restrictToOptions is enabled, always reset input to match the current valid selection
       if (restrictToOptions) {
+        // Check if typed value matches a valid option
+        const typedMatchesOption = options.some(
+          (opt) => opt.label.toLowerCase() === inputValue.toLowerCase() || opt.value === inputValue
+        );
+
+        if (typedMatchesOption) {
+          // Auto-select the matching option
+          const matchingOption = options.find(
+            (opt) => opt.label.toLowerCase() === inputValue.toLowerCase() || opt.value === inputValue
+          );
+          if (matchingOption) {
+            setInputValue(matchingOption.label);
+            onChange(matchingOption.value, matchingOption);
+            return;
+          }
+        }
+
+        // Reset to previous valid selection or clear
         if (displayValue) {
           setInputValue(displayValue);
         } else {
           setInputValue('');
+          onChange('', undefined);
         }
       }
+      setIsOpen(false);
     }, 150);
   };
 
