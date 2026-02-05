@@ -651,6 +651,15 @@ export function DynamicForm({
     // Include all fields from formData that are in editableColumns
     editableColumns.forEach((column) => {
       const value = formData[column.key];
+      const initialValue = stableInitialData[column.key];
+
+      // In edit mode, if field was cleared (had value, now empty), send null
+      if (isEditMode && (value === undefined || value === '')) {
+        if (initialValue !== undefined && initialValue !== null && initialValue !== '') {
+          transformedData[column.key] = null;
+        }
+        return;
+      }
 
       if (value === undefined || value === '') {
         return;

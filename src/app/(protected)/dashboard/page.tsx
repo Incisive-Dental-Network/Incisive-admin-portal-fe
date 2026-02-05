@@ -4,22 +4,32 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/authStore';
 import { SkeletonCard } from '@/components/ui/Skeleton';
-import { Button } from '@/components/ui/Button';
 import { ROUTES } from '@/config/ui.constants';
 import { fetchWithAuth } from '@/lib/fetch-client';
 import {
   Users,
   Activity,
   TrendingUp,
-  Settings,
+  UserX,
+  Shield,
+  Eye,
+  CalendarDays,
   ArrowRight,
 } from 'lucide-react';
 
 interface DashboardStats {
-  total_users?: number;
-  active_users?: number;
-  new_users_today?: number;
-  new_users_this_week?: number;
+  users: {
+    total: number;
+    active: number;
+    inactive: number;
+    admins: number;
+    users: number;
+    viewers: number;
+  };
+  recentActivity: {
+    newUsersThisWeek: number;
+    newUsersThisMonth: number;
+  };
 }
 
 export default function DashboardPage() {
@@ -43,7 +53,8 @@ export default function DashboardPage() {
       try {
         const response = await fetchWithAuth('/api/admin/dashboard');
         if (response.ok) {
-          const data = await response.json();
+          const json = await response.json();
+          const data = json.success ? json.data : json;
           setStats(data);
         }
       } catch (error) {
@@ -86,32 +97,63 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : stats ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard
-                title="Total Users"
-                value={stats.total_users || 0}
-                icon={<Users className="h-5 w-5" />}
-                color="blue"
-              />
-              <StatCard
-                title="Active Users"
-                value={stats.active_users || 0}
-                icon={<Activity className="h-5 w-5" />}
-                color="green"
-              />
-              <StatCard
-                title="New Today"
-                value={stats.new_users_today || 0}
-                icon={<TrendingUp className="h-5 w-5" />}
-                color="purple"
-              />
-              <StatCard
-                title="New This Week"
-                value={stats.new_users_this_week || 0}
-                icon={<TrendingUp className="h-5 w-5" />}
-                color="orange"
-              />
-            </div>
+            <>
+              <h3 className="text-sm font-medium text-gray-500 mb-3">Users</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                <StatCard
+                  title="Total Users"
+                  value={stats.users.total}
+                  icon={<Users className="h-5 w-5" />}
+                  color="blue"
+                />
+                <StatCard
+                  title="Active"
+                  value={stats.users.active}
+                  icon={<Activity className="h-5 w-5" />}
+                  color="green"
+                />
+                <StatCard
+                  title="Inactive"
+                  value={stats.users.inactive}
+                  icon={<UserX className="h-5 w-5" />}
+                  color="red"
+                />
+                <StatCard
+                  title="Admins"
+                  value={stats.users.admins}
+                  icon={<Shield className="h-5 w-5" />}
+                  color="purple"
+                />
+                <StatCard
+                  title="Users"
+                  value={stats.users.users}
+                  icon={<Users className="h-5 w-5" />}
+                  color="orange"
+                />
+                <StatCard
+                  title="Viewers"
+                  value={stats.users.viewers}
+                  icon={<Eye className="h-5 w-5" />}
+                  color="gray"
+                />
+              </div>
+
+              <h3 className="text-sm font-medium text-gray-500 mb-3">Recent Activity</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <StatCard
+                  title="New This Week"
+                  value={stats.recentActivity.newUsersThisWeek}
+                  icon={<TrendingUp className="h-5 w-5" />}
+                  color="blue"
+                />
+                <StatCard
+                  title="New This Month"
+                  value={stats.recentActivity.newUsersThisMonth}
+                  icon={<CalendarDays className="h-5 w-5" />}
+                  color="green"
+                />
+              </div>
+            </>
           ) : null}
         </div>
       )}
@@ -182,7 +224,7 @@ interface StatCardProps {
   title: string;
   value: number;
   icon: React.ReactNode;
-  color: 'blue' | 'green' | 'purple' | 'orange';
+  color: 'blue' | 'green' | 'purple' | 'orange' | 'red' | 'gray';
 }
 
 function StatCard({ title, value, icon, color }: StatCardProps) {
@@ -191,6 +233,8 @@ function StatCard({ title, value, icon, color }: StatCardProps) {
     green: 'bg-green-50 text-green-600',
     purple: 'bg-purple-50 text-purple-600',
     orange: 'bg-orange-50 text-orange-600',
+    red: 'bg-red-50 text-red-600',
+    gray: 'bg-gray-50 text-gray-600',
   };
 
   return (
