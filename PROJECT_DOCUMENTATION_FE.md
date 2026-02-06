@@ -1,4 +1,4 @@
-# Incisive Admin Portal - Technical Documentation
+# Incisive Admin Portal Frontend- Technical Documentation
 
 ## Project Structure
 
