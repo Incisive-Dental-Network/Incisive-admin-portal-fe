@@ -14,7 +14,6 @@ export async function GET(request: NextRequest) {
   const redirectTo = request.nextUrl.searchParams.get('redirect') || '/dashboard';
 
   if (!refreshToken) {
-    console.log('[Session Refresh] No refresh token, redirecting to login');
     const response = NextResponse.redirect(new URL('/login', request.url));
     response.cookies.set('access_token', '', { path: '/', maxAge: 0 });
     response.cookies.set('refresh_token', '', { path: '/', maxAge: 0 });
@@ -22,7 +21,6 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    console.log('[Session Refresh] Attempting token refresh...');
     const refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -36,7 +34,6 @@ export async function GET(request: NextRequest) {
       }
 
       if (data.accessToken) {
-        console.log('[Session Refresh] Token refreshed, redirecting to', redirectTo);
         const response = NextResponse.redirect(new URL(redirectTo, request.url));
 
         response.cookies.set('access_token', data.accessToken, {
@@ -62,13 +59,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Refresh failed
-    console.log('[Session Refresh] Refresh failed, redirecting to login');
     const response = NextResponse.redirect(new URL('/login', request.url));
     response.cookies.set('access_token', '', { path: '/', maxAge: 0 });
     response.cookies.set('refresh_token', '', { path: '/', maxAge: 0 });
     return response;
-  } catch (error) {
-    console.error('[Session Refresh] Error:', error);
+  } catch {
     const response = NextResponse.redirect(new URL('/login', request.url));
     response.cookies.set('access_token', '', { path: '/', maxAge: 0 });
     response.cookies.set('refresh_token', '', { path: '/', maxAge: 0 });

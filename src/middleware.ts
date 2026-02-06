@@ -31,13 +31,10 @@ export async function middleware(request: NextRequest) {
   const accessToken = request.cookies.get('access_token')?.value;
   const refreshToken = request.cookies.get('refresh_token')?.value;
 
-  console.log(`[Middleware] ${pathname} | hasAccess: ${!!accessToken} | hasRefresh: ${!!refreshToken}`);
-
   // If access token is missing, corrupted, or expired, and we have a refresh token,
   // try to refresh before the page loads
   const needsRefresh = refreshToken && (!accessToken || isTokenExpiredOrInvalid(accessToken));
   if (needsRefresh) {
-    console.log('[Middleware] Access token invalid/expired, attempting refresh');
     try {
       const refreshResponse = await fetch(`${API_URL}/auth/refresh`, {
         method: 'POST',
@@ -52,8 +49,6 @@ export async function middleware(request: NextRequest) {
         }
 
         if (data.accessToken) {
-          console.log('[Middleware] Token refreshed, redirecting to apply new cookies');
-
           // Redirect to the same URL so the browser stores the new cookies
           // and makes a fresh request with them. This is the only reliable way
           // to make cookies available to server components in Next.js 14.
@@ -82,7 +77,6 @@ export async function middleware(request: NextRequest) {
       }
 
       // Refresh failed — clear both tokens and redirect to login
-      console.log('[Middleware] Token refresh failed, clearing cookies');
       const isPublicPath = PUBLIC_PATHS.some((path) => pathname.startsWith(path));
       if (!isPublicPath && pathname !== '/') {
         const loginUrl = new URL('/login', request.url);
@@ -92,8 +86,8 @@ export async function middleware(request: NextRequest) {
         response.cookies.set('refresh_token', '', { path: '/', maxAge: 0 });
         return response;
       }
-    } catch (error) {
-      console.error('[Middleware] Refresh error:', error);
+    } catch {
+      // Refresh request failed
     }
   }
 
