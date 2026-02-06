@@ -1,271 +1,155 @@
 # Incisive Admin Portal - Technical Documentation
 
-## Overview
-
-This document provides a comprehensive guide to the Incisive Admin Portal frontend application. It covers all major features including user authentication, dashboard, dynamic tables system, and CRUD operations.
-
----
-
 ## Project Structure
 
-**Framework:** Next.js 14 (App Router)
-**State Management:** Zustand
-**Styling:** Tailwind CSS
-**Language:** TypeScript
-
-**Key Directories:**
-- `src/app/` - Next.js App Router pages and API routes
-- `src/components/` - Reusable React components
-- `src/lib/` - Utility functions and helpers
-- `src/store/` - Zustand state stores
-- `src/types/` - TypeScript type definitions
-- `src/config/` - Configuration constants
+```
+src/
+├── app/
+│   ├── (auth)/
+│   │   ├── login/page.tsx          # Login page
+│   │   └── register/page.tsx       # Registration page
+│   ├── (protected)/
+│   │   ├── layout.tsx              # Auth wrapper (server)
+│   │   ├── ProtectedLayoutClient.tsx
+│   │   ├── dashboard/page.tsx      # Dashboard
+│   │   ├── profile/page.tsx        # User profile
+│   │   └── tables/
+│   │       ├── page.tsx            # Tables list
+│   │       └── [table]/
+│   │           ├── page.tsx        # Table view
+│   │           ├── new/page.tsx    # Create record
+│   │           └── [id]/page.tsx   # View/Edit record
+│   └── api/
+│       └── auth/
+│           ├── login/route.ts
+│           ├── register/route.ts
+│           ├── logout/route.ts
+│           ├── refresh/route.ts
+│           └── session-refresh/route.ts
+├── components/
+│   ├── layout/
+│   │   ├── Header.tsx
+│   │   └── Sidebar.tsx
+│   ├── tables/
+│   │   ├── DataTable.tsx           # Main table component
+│   │   ├── DynamicForm.tsx         # Dynamic form generator
+│   │   ├── TableActions.tsx        # Row actions (view/edit/delete)
+│   │   └── TableFilters.tsx        # Search and filters
+│   └── ui/                         # Reusable UI components
+├── lib/
+│   ├── fetch-client.ts             # Authenticated fetch wrapper
+│   ├── permissions.ts              # Permission helpers
+│   └── utils.ts                    # Utility functions
+├── store/
+│   └── authStore.ts                # Zustand auth state
+├── config/
+│   └── ui.constants.ts             # App constants and routes
+├── types/                          # TypeScript definitions
+└── middleware.ts                   # Token refresh middleware
+```
 
 ---
 
-## 1. User Registration (Signup)
+## 1. Authentication
 
-### Flow Overview
-
-1. User navigates to `/register`
-2. Fills out registration form (first name, last name, email, password)
-3. Form validates input client-side
-4. Submits to Next.js API route `/api/auth/register`
-5. API route forwards to backend `/api/v1/auth/register`
-6. On success, tokens are set as httpOnly cookies
-7. User is redirected to `/dashboard`
-
-### Files Involved
-
-**Frontend Page:**
-`src/app/(auth)/register/page.tsx`
-- Client component with registration form
-- Fields: first_name, last_name, email, password, confirm_password
-- Validation: required fields, email format, password length (6-50 chars), password match
-- Calls `/api/auth/register` on submit
-- Uses `window.location.href` for redirect to ensure cookies are sent
-
-**API Route:**
-`src/app/api/auth/register/route.ts`
-- POST handler
-- Forwards request to backend `{API_URL}/auth/register`
-- Extracts `accessToken` and `refreshToken` from response
-- Sets cookies:
-  - `access_token`: httpOnly, 1 day maxAge
-  - `refresh_token`: httpOnly, 7 days maxAge
-- Returns `{ success: true }` on success
-
-### Code Flow
+### Login Flow
+**Files:** `src/app/(auth)/login/page.tsx` → `src/app/api/auth/login/route.ts`
 
 ```
-RegisterPage (client)
-    ↓ POST /api/auth/register
-API Route (server)
-    ↓ POST {BACKEND}/auth/register
-Backend Response
+User submits email/password
+    ↓ POST /api/auth/login
+API Route forwards to backend
+    ↓ POST {BACKEND}/auth/login
+Backend returns tokens
     ↓ { accessToken, refreshToken }
-API Route sets cookies
-    ↓ access_token, refresh_token
+API Route sets httpOnly cookies
+    ↓ access_token (1 day), refresh_token (7 days)
 Redirect to /dashboard
 ```
 
----
+### Registration Flow
+**Files:** `src/app/(auth)/register/page.tsx` → `src/app/api/auth/register/route.ts`
 
-## 2. User Login
+- Fields: first_name, last_name, email, password, confirm_password
+- Validation: required fields, email format, password 6-50 chars
+- Same token/cookie flow as login
 
-### Flow Overview
+### Token Refresh (3 Layers)
 
-1. User navigates to `/login`
-2. Fills out login form (email, password)
-3. Form validates input
-4. Submits to Next.js API route `/api/auth/login`
-5. API route forwards to backend `/api/v1/auth/login`
-6. On success, tokens are set as httpOnly cookies
-7. User is redirected to callback URL or `/dashboard`
+**Layer 1 - Middleware** (`src/middleware.ts`)
+- Intercepts all page requests
+- Refreshes if access token missing/expired
+- Sets new cookies, redirects to same URL
 
-### Files Involved
+**Layer 2 - Protected Layout** (`src/app/(protected)/layout.tsx`)
+- Validates token with `/api/v1/users/me`
+- On 401, delegates to session-refresh route
 
-**Frontend Page:**
-`src/app/(auth)/login/page.tsx`
-- Client component with login form
-- Fields: email, password
-- Reads `callbackUrl` from query params for post-login redirect
-- Validation: required fields, email format
-- Calls `/api/auth/login` on submit
-
-**API Route:**
-`src/app/api/auth/login/route.ts`
-- POST handler
-- Forwards request to backend `{API_URL}/auth/login`
-- Sets cookies same as registration
-- Returns `{ success: true }` on success
-
-### Code Flow
-
-```
-LoginPage (client)
-    ↓ POST /api/auth/login
-API Route (server)
-    ↓ POST {BACKEND}/auth/login
-Backend Response
-    ↓ { accessToken, refreshToken }
-API Route sets cookies
-    ↓ access_token, refresh_token
-Redirect to callbackUrl or /dashboard
-```
+**Layer 3 - Session Recovery** (`src/app/api/auth/session-refresh/route.ts`)
+- Handles edge cases middleware can't detect
+- Either refreshes or clears cookies and redirects to login
 
 ---
 
-## 3. User Activation/Deactivation
+## 2. Dashboard
 
-### Flow Overview
+**File:** `src/app/(protected)/dashboard/page.tsx`
 
-User activation/deactivation is managed through the tables system. Users with appropriate permissions can activate or deactivate other users from the users table.
+- Personalized greeting based on time of day
+- Admin stats from `/api/admin/dashboard` (total users, active/inactive, roles)
+- Quick action cards (View Profile, Manage Tables)
+- Account information display
 
-### Files Involved
-
-**DataTable Component:**
-`src/components/tables/DataTable.tsx`
-- `handleActivate(id)`: PATCH request with `{ is_active: true }`
-- `handleDeactivate(id)`: PATCH request with `{ is_active: false }`
-- Both call `/api/tables/{tableName}/rows/{id}`
-
-**TableActions Component:**
-`src/components/tables/TableActions.tsx`
-- Shows Activate button if `hasAction(permissions, 'activate')` and `!isActive`
-- Shows Deactivate button if `hasAction(permissions, 'deactivate')` and `isActive`
-
-### Activation Flow
-
-```
-TableActions
-    ↓ onClick → onActivate()
-DataTable.handleActivate(id)
-    ↓ PATCH /api/tables/users/rows/{id}
-    ↓ body: { is_active: true }
-Backend updates user
-    ↓ Success
-DataTable.fetchRows() - refresh table
-```
-
----
-
-## 4. Dashboard
-
-### Flow Overview
-
-1. User accesses `/dashboard` (protected route)
-2. Middleware validates/refreshes token
-3. Protected layout fetches user data via `/api/v1/users/me`
-4. Dashboard page displays user greeting and stats (for admins)
-
-### Files Involved
-
-**Dashboard Page:**
-`src/app/(protected)/dashboard/page.tsx`
-- Client component
-- Displays personalized greeting based on time of day
-- For admin users: fetches and displays stats from `/api/admin/dashboard`
-- Shows quick action cards (View Profile, Manage Tables)
-- Displays account information (name, email, role, status)
-
-**Protected Layout:**
-`src/app/(protected)/layout.tsx`
-- Server component
-- Calls `getSession()` to verify authentication
-- Fetches user data from `{API_URL}/users/me`
-- Handles session states: success, no_session, needs_refresh, server_error
-- Redirects to login if unauthenticated
-
-**ProtectedLayoutClient:**
-`src/app/(protected)/ProtectedLayoutClient.tsx`
-- Client component wrapper
-- Syncs user data to Zustand store via `setUser(user)`
-- Renders Header and Sidebar layout
-
-### Dashboard Stats (Admin Only)
-
-```typescript
-interface DashboardStats {
-  users: {
-    total: number;
-    active: number;
-    inactive: number;
-    admins: number;
-    users: number;
-    viewers: number;
-  };
-  recentActivity: {
-    newUsersThisWeek: number;
-    newUsersThisMonth: number;
-  };
-}
-```
-
-### Code Flow
-
+### Protected Layout Flow
 ```
 Browser requests /dashboard
     ↓
-Middleware (src/middleware.ts)
-    ↓ Validates/refreshes token
-Protected Layout (server)
-    ↓ GET {BACKEND}/users/me
-    ↓ Returns user data
-ProtectedLayoutClient (client)
-    ↓ setUser(user) to Zustand store
-DashboardPage (client)
-    ↓ isAdmin() ? fetch /api/admin/dashboard : skip
-    ↓ Render greeting, stats, quick actions
+Middleware validates/refreshes token
+    ↓
+Protected Layout fetches /users/me
+    ↓
+ProtectedLayoutClient syncs user to Zustand
+    ↓
+Dashboard renders
 ```
 
 ---
 
-## 5. Tables System
+## 3. Tables System
 
-### Overview
+### Tables List
+**File:** `src/app/(protected)/tables/page.tsx`
+- Fetches available tables from `/api/tables`
+- Displays cards with name, description, record count
 
-The tables system provides a dynamic, configuration-driven interface for managing database tables. Each table has a configuration that defines columns, permissions, and behavior.
+### Individual Table
+**File:** `src/app/(protected)/tables/[table]/page.tsx`
+- Fetches config from `/api/tables/{tableName}`
+- Renders DataTable component
 
-### Files Involved
+### DataTable Component
+**File:** `src/components/tables/DataTable.tsx`
 
-**Tables List Page:**
-`src/app/(protected)/tables/page.tsx`
-- Fetches all available tables from `/api/tables`
-- Displays table cards with name, description, record count
-- Provides search/filter functionality
+**Features:**
+- Pagination, sorting (column headers), filtering, search
+- CSV download
+- Inline editing (product_lab_markup, product_lab_rev_share)
+- CRUD actions via TableActions
 
-**Individual Table Page:**
-`src/app/(protected)/tables/[table]/page.tsx`
-- Dynamic route for any table
-- Fetches table configuration from `/api/tables/{tableName}`
-- Renders DataTable component with configuration
+**Data Flow:**
+```
+fetchRows()
+    ↓ GET /api/tables/{tableName}/rows
+    ↓ params: page, limit, sortBy, sortOrder, search, filters
+Response: { data: [...], meta: { total, totalPages } }
+```
 
-**DataTable Component:**
-`src/components/tables/DataTable.tsx`
-- Main table rendering component
-- Features:
-  - Pagination with configurable page size
-  - Sorting (click column headers)
-  - Filtering (via TableFilters component)
-  - Search
-  - CSV download
-  - Inline editing (for specific tables)
-  - CRUD actions via TableActions
-
-**TableFilters Component:**
-`src/components/tables/TableFilters.tsx`
-- Search input
-- Column-specific filters
-- Filter chips display
-
-### Table Configuration Structure
-
+### Table Configuration
 ```typescript
 interface TableConfig {
-  name: string;           // Table identifier (e.g., "users")
-  label: string;          // Display name (e.g., "Users")
-  columns: TableColumn[]; // Column definitions
+  name: string;
+  label: string;
+  columns: TableColumn[];
   permissions: TablePermissions;
   default_sort?: SortConfig;
 }
@@ -278,8 +162,6 @@ interface TableColumn {
   filterable: boolean;
   editable: boolean;
   required: boolean;
-  options?: ColumnOption[];      // For select type
-  optionsEndpoint?: string;      // For dynamic options
 }
 
 interface TablePermissions {
@@ -287,145 +169,75 @@ interface TablePermissions {
   create: boolean;
   update: boolean;
   delete: boolean;
-  actions: string[];  // e.g., ['activate', 'deactivate', 'export']
+  actions: string[];  // ['activate', 'deactivate', 'export']
 }
 ```
 
-### Data Fetch Flow
-
-```
-DataTable component mounts
-    ↓
-fetchRows() called
-    ↓ GET /api/tables/{tableName}/rows
-    ↓ Query params: page, limit, sortBy, sortOrder, search, filters
-Backend returns
-    ↓ { data: [...], meta: { total, totalPages } }
-DataTable renders rows
-    ↓ Column values rendered via renderCellValue()
-    ↓ Actions rendered via TableActions
-```
-
 ---
 
-## 6. CRUD Operations
+## 4. CRUD Operations
 
-### View Record (Read)
-
+### View Record
 **File:** `src/app/(protected)/tables/[table]/[id]/page.tsx`
+- Route: `/tables/{tableName}/{id}`
+- Fetches config + row data in parallel
+- Edit button if `canEdit(permissions)`
 
-**Flow:**
-1. Navigate to `/tables/{tableName}/{id}`
-2. Page fetches config and row data in parallel
-3. Displays record details in read-only format
-4. Edit button shown if `canEdit(permissions)` is true
-
-**API Calls:**
-- `GET /api/tables/{tableName}` - table config
-- `GET /api/tables/{tableName}/rows/{id}` - row data
-
-### Create Record (Create)
-
+### Create Record
 **File:** `src/app/(protected)/tables/[table]/new/page.tsx`
+- Route: `/tables/{tableName}/new`
+- Checks `canCreate(permissions)`
+- POST `/api/tables/{tableName}/rows`
 
-**Flow:**
-1. Navigate to `/tables/{tableName}/new`
-2. Page fetches table config
-3. Checks `canCreate(permissions)` - redirects if false
-4. Renders DynamicForm component
-5. On submit, POST to create endpoint
-6. Redirects to detail page on success
+### Edit Record
+**File:** `src/app/(protected)/tables/[table]/[id]/page.tsx`
+- Route: `/tables/{tableName}/{id}?edit=true`
+- PATCH `/api/tables/{tableName}/rows/{id}`
 
-**API Calls:**
-- `GET /api/tables/{tableName}` - table config
-- `POST /api/tables/{tableName}/rows` - create record
-
-### Edit Record (Update)
-
-**File:** `src/app/(protected)/tables/[table]/[id]/page.tsx` with `?edit=true`
-
-**Flow:**
-1. Navigate to `/tables/{tableName}/{id}?edit=true`
-2. Page renders DynamicForm with initial data
-3. On submit, PATCH to update endpoint
-4. Redirects to view mode on success
-
-**API Calls:**
-- `PATCH /api/tables/{tableName}/rows/{id}` - update record
-
-### Delete Record (Delete)
-
-**File:** `src/components/tables/DataTable.tsx` and `TableActions.tsx`
-
-**Flow:**
-1. Click delete action in table row
-2. Confirmation dialog appears
-3. On confirm, DELETE request sent
-4. Table refreshes on success
-
-**API Calls:**
-- `DELETE /api/tables/{tableName}/rows/{id}` - delete record
+### Delete Record
+**File:** `src/components/tables/TableActions.tsx`
+- Confirmation dialog
+- DELETE `/api/tables/{tableName}/rows/{id}`
 
 ### Inline Editing
-
-**File:** `src/components/tables/DataTable.tsx`
-
-Certain tables support inline cell editing:
-- `product_lab_markup`: cost, standard_price, nf_price, commitment_eligible
-- `product_lab_rev_share`: dynamic fee columns
-
-**Flow:**
-1. Click on editable cell
-2. Input field appears
-3. Edit value
-4. On blur or Enter, PATCH request sent
-5. Cell updates or reverts on error
+- Click editable cell → input appears
+- On blur/Enter → PATCH request
+- Supported tables: `product_lab_markup`, `product_lab_rev_share`
 
 ---
 
-## 7. DynamicForm Component
+## 5. DynamicForm Component
 
 **File:** `src/components/tables/DynamicForm.tsx`
 
-### Overview
+### Field Types
+- text, number, email, password, date
+- boolean (Yes/No select)
+- select (static or dynamic options)
+- Autocomplete (typeahead for foreign keys)
 
-A configurable form component that renders form fields based on column definitions. Supports various field types and handles foreign key relationships.
-
-### Features
-
-**Field Types:**
-- text, number, email, password
-- date
-- boolean (rendered as Yes/No select)
-- select (static options or dynamic from API)
-- Autocomplete (typeahead search for foreign keys)
-
-**Foreign Key Support:**
+### Foreign Key Config
 ```typescript
 const FOREIGN_KEY_CONFIG = {
   lab_id: { endpoint: '/api/labs/ids', ... },
-  practice_id: { endpoint: '/api/practices/ids', useTypeahead: true, ... },
-  dental_group_id: { endpoint: '/api/dental-groups/ids', useTypeahead: true, ... },
-  // ...
+  practice_id: { endpoint: '/api/practices/ids', useTypeahead: true },
+  dental_group_id: { endpoint: '/api/dental-groups/ids', useTypeahead: true },
 };
 ```
 
-**Dependent Fields:**
-Some fields depend on other fields (e.g., lab_product_id depends on lab_id):
+### Dependent Fields
 ```typescript
 const DEPENDENT_FIELD_CONFIG = {
   product_lab_markup: {
     lab_product_id: {
       dependsOn: 'lab_id',
       endpoint: (labId) => `/api/tables/lab_product_mapping/rows?filters=...`,
-      // ...
     },
   },
 };
 ```
 
-**Auto-fill Configuration:**
-When a field changes, can automatically fill related fields:
+### Auto-fill
 ```typescript
 const AUTO_FILL_CONFIG = {
   dental_practices: {
@@ -437,186 +249,86 @@ const AUTO_FILL_CONFIG = {
 };
 ```
 
-### Form Validation
-
-- Required field validation
-- Email format validation
-- Number type validation
-- Password length validation (6-50 characters)
-- Typeahead selection validation (must select from dropdown)
-
 ---
 
-## 8. Authentication State Management
+## 6. State Management
 
-### Zustand Store
-
+### Auth Store
 **File:** `src/store/authStore.ts`
 
 ```typescript
 interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
-  isLoading: boolean;
-  accessToken: string | null;
-
   setUser: (user: User | null) => void;
-  setAccessToken: (token: string | null) => void;
   logout: () => void;
   isAdmin: () => boolean;
-  // ...
 }
 ```
+- Persisted to sessionStorage
+- Restored on page reload
 
-**Persistence:**
-- User data persisted to sessionStorage
-- Automatically restored on page reload
-
-### Client-Side Fetch
-
+### Fetch Client
 **File:** `src/lib/fetch-client.ts`
-
-```typescript
-export async function fetchWithAuth(url: string, options?: RequestInit): Promise<Response> {
-  const response = await fetch(url, { ...options, credentials: 'include' });
-
-  if (response.status === 401) {
-    // Redirect to login
-    window.location.href = `/login?callbackUrl=${currentPath}`;
-  }
-
-  return response;
-}
-```
+- Wraps fetch with `credentials: 'include'`
+- On 401: redirects to `/login?callbackUrl={currentPath}`
 
 ---
 
-## 9. Permissions System
-
-### Permission Helpers
+## 7. Permissions
 
 **File:** `src/lib/permissions.ts`
 
 ```typescript
-canView(permissions)   // permissions?.read
-canCreate(permissions) // permissions?.create
-canEdit(permissions)   // permissions?.update
-canDelete(permissions) // permissions?.delete
-hasAction(permissions, action) // permissions?.actions?.includes(action)
+canView(permissions)    // permissions?.read
+canCreate(permissions)  // permissions?.create
+canEdit(permissions)    // permissions?.update
+canDelete(permissions)  // permissions?.delete
+hasAction(permissions, action)  // permissions?.actions?.includes(action)
 ```
 
-### Permission Flow
-
-1. Backend returns permissions with table config
-2. DataTable receives permissions
-3. UI elements conditionally rendered:
-   - "Add New" button: `canCreate(permissions)`
-   - Edit action: `canEdit(permissions)`
-   - Delete action: `canDelete(permissions)`
-   - Activate/Deactivate: `hasAction(permissions, 'activate'/'deactivate')`
+**UI Rendering:**
+- "Add New" button: `canCreate(permissions)`
+- Edit action: `canEdit(permissions)`
+- Delete action: `canDelete(permissions)`
+- Activate/Deactivate: `hasAction(permissions, 'activate'/'deactivate')`
 
 ---
 
-## 10. Token Refresh System
+## 8. Routes Reference
 
-### Overview
-
-The application uses a three-layer token refresh system to ensure seamless authentication.
-
-### Layers
-
-**Layer 1 - Middleware:**
-`src/middleware.ts`
-- Intercepts all page requests
-- Checks if access token is missing/expired/corrupted
-- If refresh token exists, attempts refresh
-- Sets new cookies and redirects to same URL
-
-**Layer 2 - Protected Layout:**
-`src/app/(protected)/layout.tsx`
-- Server-side session verification
-- Calls `/api/v1/users/me` to validate token
-- On 401, delegates to session-refresh route
-
-**Layer 3 - Session Recovery Route:**
-`src/app/api/auth/session-refresh/route.ts`
-- Handles edge cases where middleware can't detect invalid token
-- Can set cookies (unlike Server Components)
-- Either refreshes successfully or clears cookies and redirects to login
-
-### Token Configuration
-
-- Access Token: 1 day, httpOnly cookie
-- Refresh Token: 7 days, httpOnly cookie
-- Cookies: `secure: false`, `sameSite: 'lax'`, `path: '/'`
-
----
-
-## 11. Routes Reference
-
-**Public Routes:**
+**Public:**
 - `/login` - Login page
 - `/register` - Registration page
 
-**Protected Routes:**
+**Protected:**
 - `/dashboard` - Main dashboard
 - `/profile` - User profile
 - `/tables` - Tables list
-- `/tables/{tableName}` - Individual table view
-- `/tables/{tableName}/new` - Create new record
+- `/tables/{tableName}` - Table view
+- `/tables/{tableName}/new` - Create record
 - `/tables/{tableName}/{id}` - View record
 - `/tables/{tableName}/{id}?edit=true` - Edit record
 
-**API Routes:**
-- `POST /api/auth/login` - Login
-- `POST /api/auth/register` - Register
-- `POST /api/auth/logout` - Logout
-- `POST /api/auth/refresh` - Token refresh
-- `GET /api/auth/session-refresh` - Session recovery
+**API:**
+- `POST /api/auth/login`
+- `POST /api/auth/register`
+- `POST /api/auth/logout`
+- `POST /api/auth/refresh`
+- `GET /api/auth/session-refresh`
 
 ---
 
-## 12. Environment Variables
+## 9. Environment Variables
 
 ```
 NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
 ```
 
-This variable configures the backend API base URL used by all API routes.
-
 ---
 
-## 13. File Reference Summary
+## 10. Token Configuration
 
-**Authentication:**
-- `src/app/(auth)/login/page.tsx` - Login UI
-- `src/app/(auth)/register/page.tsx` - Registration UI
-- `src/app/api/auth/login/route.ts` - Login API
-- `src/app/api/auth/register/route.ts` - Register API
-- `src/app/api/auth/logout/route.ts` - Logout API
-- `src/app/api/auth/refresh/route.ts` - Token refresh API
-- `src/app/api/auth/session-refresh/route.ts` - Session recovery
-
-**Protected Area:**
-- `src/app/(protected)/layout.tsx` - Auth wrapper (server)
-- `src/app/(protected)/ProtectedLayoutClient.tsx` - Layout (client)
-- `src/app/(protected)/dashboard/page.tsx` - Dashboard
-- `src/app/(protected)/profile/page.tsx` - User profile
-
-**Tables System:**
-- `src/app/(protected)/tables/page.tsx` - Tables list
-- `src/app/(protected)/tables/[table]/page.tsx` - Table view
-- `src/app/(protected)/tables/[table]/new/page.tsx` - Create record
-- `src/app/(protected)/tables/[table]/[id]/page.tsx` - View/Edit record
-- `src/components/tables/DataTable.tsx` - Table component
-- `src/components/tables/DynamicForm.tsx` - Form component
-- `src/components/tables/TableActions.tsx` - Row actions
-- `src/components/tables/TableFilters.tsx` - Filter controls
-
-**Core:**
-- `src/middleware.ts` - Token refresh middleware
-- `src/store/authStore.ts` - Auth state management
-- `src/lib/fetch-client.ts` - Authenticated fetch wrapper
-- `src/lib/permissions.ts` - Permission helpers
-- `src/config/ui.constants.ts` - App constants
-- `src/types/` - TypeScript definitions
+- Access Token: 1 day, httpOnly cookie
+- Refresh Token: 7 days, httpOnly cookie
+- Cookie settings: `secure: false`, `sameSite: 'lax'`, `path: '/'`
